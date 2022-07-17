@@ -1,12 +1,19 @@
-/* Allow for accessing properties with a string */
+import type { ObjectExpression } from '@babel/types'
+import { traverseNode } from '@vue/compiler-core'
+
+/* Allow for accessing properties of specific type T */
 export interface IIndexable<T = any> {
   [key: string]: T
 }
 
+export type Tree<T> = T & {
+  children?: T[]
+}
+
 /* Interfaces used by the arrayToTree method */
 export interface ITreeItem {
-  Id: number
-  ParentId: number | null
+  Id: number | string
+  ParentId: number | string | null
   [key: string]: any
 }
 
@@ -16,14 +23,14 @@ export interface ITreeItemKeyMappings {
 }
 
 export interface ITreeNode {
-  key: string | number
-  data: ITreeItem | null
-  children: ITreeNode[]
+  key?: string | number
+  data?: object | null
+  children?: ITreeNode[]
 }
 
 export default class treeUtils {
   /* Unflattens an array to a tree */
-  static composeTreeFromArray(
+  static buildTree(
     items: ITreeItem[],
     propertyNames: ITreeItemKeyMappings = {
       idProperty: 'Id',
@@ -67,7 +74,7 @@ export default class treeUtils {
         }
 
         // add the current item to the parent
-        lookup[parentId].children.push(TreeItem)
+        lookup[parentId].children?.push(TreeItem)
       }
     }
 
@@ -77,24 +84,33 @@ export default class treeUtils {
   /**
    * Return a flat array from a hierachical array
    */
-  static composeArrayFromTree(
+  static flattenTree(
     rootNode: ITreeNode,
     config: ITreeItemKeyMappings = {
       idProperty: 'Id',
       parentIdProperty: 'ParentId'
     }
-  ): ITreeItem[] {
+  ): object[] {
     const treeItems: ITreeItem[] = []
+    const id = config.idProperty
+    const parentId = config.parentIdProperty
 
-    const iterateChildren = (id: string | number) => {
-      for (const node of rootNode.children) {
-        treeItems.push({
-          Id: typeof node.key == 'string' ? parseInt(node.key) : node.key,
-          ParentId: typeof id == 'string' ? parseInt(id) : id
-        })
-        iterateChildren(node.key)
+    this.traverseTreeUntil(rootNode, (child, parent) => {
+      if (child.children) {
+        for (const node of child.children) {
+          const item: any = {
+            ...node.data
+          }
+
+          item[config.idProperty] = !node.key ? -1 : node.key
+          item[config.parentIdProperty] = !Array.isArray(parent)
+            ? parent.key
+            : null
+
+          treeItems.push(item)
+        }
       }
-    }
+    })
 
     return treeItems
   }
@@ -103,14 +119,42 @@ export default class treeUtils {
     if (node.key === key) return node
 
     if (node.children && node.children.length)
-      for (const child of node.children) return this.findNodeByKey(child, key)
+      for (const child of node.children) {
+        return this.findNodeByKey(child, key)
+      }
 
     return null
   }
 
-  static traverseTree(tree: ITreeNode, task: () => boolean) {
-    for (const child of tree.children)
-      if (task.call(child) != false) this.traverseTree(child, task)
+  static traverseTreeUntil<T extends ITreeNode>(
+    tree: T | T[],
+    task: (child: T, parent: T, index: number, parents: T[]) => boolean | void,
+    parents: T[] = []
+  ): { node: T; parent: T; index: number; parents: T[] } | null {
+    if (Array.isArray(tree)) {
+      for (let i = 0; i < tree.length; i++) {
+        if (task(tree[i], parents[parents.length - 1], i, parents) === true) {
+          return {
+            node: tree[i],
+            parent: parents[parents.length - 1],
+            index: i,
+            parents: parents
+          }
+        } else if (tree[i].children?.length) {
+          const result = this.traverseTreeUntil(tree[i], task, parents)
+          if (result) {
+            return result
+          }
+        }
+      }
+    } else {
+      if (tree.children?.length)
+        return this.traverseTreeUntil(tree.children as T[], task, [
+          ...parents,
+          tree
+        ])
+    }
+    return null
   }
 
   static traverseObject(obj: IIndexable<Object | any>, task: () => boolean) {
@@ -123,22 +167,19 @@ export default class treeUtils {
     }
   }
 
-  static getCyclicJSON(obj: object, tabChar: string = '\t'): string {
-    // if (Array.isArray(obj)) // || !_.isObject(obj)) {
-    //  return obj.toString();
-
-    const seen: any[] = []
-    const value = JSON.stringify(
-      obj,
-      function (key, val) {
-        if (val != null && typeof val === 'object') {
-          if (seen.indexOf(val) >= 0) return
-          seen.push(val)
-        }
-        return val
-      },
-      tabChar
-    )
-    return value
-  }
+  // static getCyclicJSON(obj: object, tabChar: string = '\t'): string {
+  //   const seen: any[] = []
+  //   const value = JSON.stringify(
+  //     obj,
+  //     function (key, val) {
+  //       if (val != null && typeof val === 'object') {
+  //         if (seen.indexOf(val) >= 0) return
+  //         seen.push(val)
+  //       }
+  //       return val
+  //     },
+  //     tabChar
+  //   )
+  //   return value
+  // }
 }

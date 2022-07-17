@@ -260,3 +260,41 @@ public class CircleLocator
         }
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+public class IK
+{
+    void moveToPos(double x, double y, double z)
+    {
+        double b = Math.Atan(y, x) * (180 / 3.1415); // base angle
+
+        double l = Math.Sqrt(x * x + y * y); // x and y extension 
+
+        double h = Math.Sqrt(l * l + z * z);
+
+        double phi = Math.Atan(z / l) * (180 / 3.1415);
+
+        double theta = Math.Acos((h / 2) / 75) * (180 / 3.1415);
+
+        double a1 = phi + theta; // angle for first part of the arm
+        double a2 = phi - theta; // angle for second part of the arm
+
+        //   moveToAngle(b,a1,a2);
+    }
+}

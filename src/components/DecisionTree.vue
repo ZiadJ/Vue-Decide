@@ -1,31 +1,53 @@
 <script setup lang="ts">
 import type { ColumnProps } from 'primevue/column'
 import type {
-  TreeTableExpandedKeys,
-  TreeTableFilterMeta
+  TreeTableSelectionKeys,
+  TreeTableExpandedKeys
 } from 'primevue/treetable'
-import { unref, ref, reactive, onMounted, computed, watch } from 'vue'
+import { unref, ref, reactive, onMounted, computed, watch, type Ref } from 'vue'
 import { useToast } from 'primevue/usetoast'
 import type { TreeNode } from 'primevue/tree'
 import Editor, { type EditorTextChangeEvent } from 'primevue/editor'
-import type Tree from 'primevue/tree'
 import {
   useWindowSize,
   useStorage,
   useLastChanged,
   useDebounce,
-  useDebounceFn
+  useDebounceFn,
+  refAutoReset
 } from '@vueuse/core'
 import treeutils from '@/methods/treeutils'
 import type { RatingChangeEvent } from 'primevue/rating'
 
-import { log, json } from '@/methods/utils'
+import Console from '@/components/Console.vue'
+import vote from './vote.vue'
+import ConsoleView from '@/views/ConsoleView.vue'
+import { useVueConsole, str, json } from '@/methods/console'
+import treeUtils from '@/methods/treeutils'
+import { useConfirm } from 'primevue/useconfirm'
 
-//import { log } from 'src/views/console.vue'
+const { log } = useVueConsole('test', (e) => {
+  if (e == 'r') return str(rootNode.value)
+
+  const result = str(eval(e))
+  watch(eval(e), (e) => {
+    alert(e)
+    //log(e)
+  })
+  //alert(result.length)
+  return result
+})
+
+// setTimeout(() => {
+//   useVueConsole('test2', () => {
+//     return 'test2'
+//   }).log('test2-log')
+// }, 3000)
 
 //watch(useWindowSize().height, (val) => { log(val) })
-json('adsf')
+
 const toast = useToast()
+const confirm = useConfirm()
 
 function notify(title: string, content: string, severity: string = 'success') {
   //alert(content);
@@ -44,14 +66,14 @@ const props = defineProps({
 onMounted(async () => {
   if (!rootNode.value.length) {
     const data = await (await fetch(props.jsonUrl)).json()
-    log(data)
+    //log(data)
     rootNode.value = data.root
   }
 
   for (let i = 0; i < 4; i++) addColumn()
 })
 
-const rootNode = useStorage<TreeNode[]>('rootNode', [])
+let rootNode = useStorage<TreeNode[]>('rootNode', [])
 
 const selectedNode = ref<TreeNode>({ data: {} })
 
@@ -85,15 +107,15 @@ const columns = ref<ColumnProps[]>([
   }
 ])
 
-// ref<TreeTableFilterMeta>({'global': {value: null, matchMode: FilterMatchMode.CONTAINS}});)
 const searchFilters = ref({ global: '' })
 
 /// State
 const st = reactive({
   //show: false,
-  treeCheckboxes: false,
+  isEditMode: false,
+  hasChange: false,
   editorButtons: ['bold', 'italic', 'underline', 'link', 'color', 'background'],
-  ratingControlType: ref('knob'),
+  ratingControlType: ref('vote'),
   count: 0
 })
 
@@ -101,7 +123,7 @@ function addColumn() {
   const index = columns.value.length - 1
 
   let col: ColumnProps = {
-    columnKey: columns.value.length.toString(),
+    columnKey: 'proposal-goal-' + index,
     field: 'proposal-goal-' + index,
     dataType: st.ratingControlType,
     header: 'Proposal' + index,
@@ -118,7 +140,7 @@ function addColumn() {
 
 const visibleColumns = ref(columns.value)
 
-const selectedKeys = ref([])
+const selectedKeys = ref<TreeTableSelectionKeys>({})
 
 const selectedNodes = ref<TreeNode[]>([])
 
@@ -129,7 +151,7 @@ function onToggle(val: any) {
 function onNodeSelect(node: TreeNode) {
   selectedNode.value = node
   selectedNodes.value.push(node)
-  log(node)
+  //log(node)
 }
 
 function onNodeUnselect(node: any) {
@@ -138,39 +160,99 @@ function onNodeUnselect(node: any) {
   )
 }
 
+const deleteNode = (node: TreeNode, event: MouseEvent) => {
+  let parentArray = getParentArray(rootNode.value, node)
+
+  const index1 = parentArray.findIndex((n: TreeNode) => n.key == node.key)
+
+  confirm.require({
+    header: 'Delete Confirmation', // for confirm dialog
+    target: event.currentTarget as HTMLElement, // for confirm popup
+    message: 'Do you want to delete this entry?',
+    icon: 'pi pi-info-circle',
+    acceptClass: 'p-button-danger',
+    accept: () => {
+      parentArray.splice(index1, 1)
+
+      toast.add({
+        severity: 'info',
+        summary: 'Confirmed',
+        detail: 'Entry deleted',
+        life: 3000
+      })
+    },
+    reject: () => {
+      toast.add({
+        severity: 'error',
+        summary: 'Rejected',
+        detail: 'You have rejected',
+        life: 3000
+      })
+    }
+  })
+}
+
+const getParentArray = (rootNode: TreeNode, node: TreeNode): TreeNode => {
+  return (
+    treeUtils.traverseTreeUntil<TreeNode>(rootNode, (child) => {
+      return child === node
+    })?.parent.children || rootNode
+  )
+}
+
 const addNode = (event: MouseEvent) => {
   if (!selectedNode.value) selectedNode.value = rootNode.value
 
+  const newKey = (-Math.random() * 1000).toFixed(0).toString()
+
+  const title = prompt('Add Node', 'Enter a name for the new node')
+
   const newNode: TreeNode = {
-    key: (-Math.random() * 1000).toFixed(0).toString(),
+    key: newKey,
     data: {
-      title: 'New goal',
+      title: title || 'New goal item',
       content: 'New content'
     }
   }
 
-  if (selectedNode.value.children == undefined) selectedNode.value.children = []
+  if (!selectedNode.value.children) {
+    selectedNode.value.children = [newNode]
+  } else {
+    selectedNode.value.children.push(newNode)
+  }
 
-  if (selectedNode.value.children && selectedNode.value.children.length)
-    expandedKeys.value[selectedNode.value.key as any] = {}
+  toggleNode(selectedNode.value, true, true)
 
-  selectedNode.value.children.push(newNode)
-  expandedKeys.value.push(selectedNode.value)
+  //selectedKeys.value = {}
+  selectedKeys.value[newKey] = true
 }
 
-const expandedKeys = ref<TreeTableExpandedKeys[]>([])
+const expandedKeys = ref<TreeTableExpandedKeys>({})
 
-// function expandNode(node: TreeNode) {
-//   if (!node) node = st.selectedNode.value
+function toggleNode(
+  node: TreeNode,
+  expand: boolean | null = null,
+  explandChildren: boolean | null = null
+) {
+  if (!node) node = selectedNode.value
 
-//   if (node.children && node.children.length) {
-//     expandedKeys.value[node.key] = true
+  if (node.key != null) {
+    if (expand == null) expand = !expandedKeys.value[node.key]
 
-//     for (let child of node.children) {
-//       expandNode(child)
-//     }
-//   }
-// }
+    if (!expand) {
+      delete expandedKeys.value[node.key]
+    } else {
+      if (node.children?.length) {
+        expandedKeys.value[node.key] = true
+
+        if (explandChildren)
+          for (let child of node.children)
+            toggleNode(child, explandChildren, expand)
+      }
+    }
+    // expandedKeys.value = { ...expandedKeys.value }
+  }
+}
 
 //const proposalText = ref('')
 const proposalIndex = ref('0')
@@ -178,7 +260,7 @@ const treeTableMouseOver = (e: MouseEvent) => {
   const el = (e.target as Element).closest('.proposal-rating')
   //if (e.button == 1)
   if (el) {
-    log((proposalIndex.value = 'Proposal ' + el.className.split('-').slice(-1)))
+    //log((proposalIndex.value = 'Proposal ' + el.className.split('-').slice(-1)))
   }
 }
 
@@ -196,62 +278,136 @@ const debounceNotify = useDebounceFn((title: any, content: any) => {
 }, 2000)
 
 function onEditorChanged(e: EditorTextChangeEvent) {
+  st.hasChange = true
   debounceNotify(`Text changed for goal`, json(e.delta))
 }
 
 function onProposalRateChange(e: RatingChangeEvent | number, args: any) {
+  st.hasChange = true
   debounceNotify(
     'Rating changed',
     `${typeof e == 'number' ? e : e.value} for goal ${args.key}`
   )
 }
 
-const items = ref([
-  {
-    label: 'Update',
-    icon: 'pi pi-refresh'
-  },
-  {
-    label: 'Delete',
-    icon: 'pi pi-times'
+const goalOperationsMenu = computed(() => {
+  return [
+    {
+      label: 'Edit Mode',
+      icon: 'pi pi-pencil',
+      command: () => {
+        st.isEditMode = true
+      }
+    },
+    {
+      label: 'View Mode',
+      icon: 'pi pi-minus',
+      command: () => {
+        st.isEditMode = false
+      }
+    },
+    {
+      label: st.isEditMode ? 'View Mode' : 'Edit Mode',
+      icon: st.isEditMode ? 'pi pi-key' : 'pi pi-pencil',
+      command: () => {
+        st.isEditMode = !st.isEditMode
+      }
+    },
+    {
+      label: st.isEditMode ? 'View Mode' : 'Edit Mode',
+      icon: st.isEditMode ? 'pi pi-key' : 'pi pi-pencil',
+      command: () => {
+        st.isEditMode = !st.isEditMode
+      }
+    }
+  ]
+})
+
+function saveData() {
+  alert('Saved')
+}
+
+function editButtonClicked() {
+  if (st.hasChange) {
+    saveData()
+    st.hasChange = false
+  } else {
+    st.isEditMode = !st.isEditMode
   }
-])
+}
+
+watch(rootNode, (e) => {
+  st.hasChange = true
+})
 </script>
 
 <template>
+  <SpeedDial
+    :model="goalOperationsMenu"
+    :radius="60"
+    direction="right"
+    type="semi-circle"
+    style="z-index: 10000"
+  />
+  <ConfirmPopup></ConfirmPopup>
+  <ConfirmDialog></ConfirmDialog>
   <Toast style="opacity: 0.9" />
   <!-- <Dialog title="test" content="test"></Dialog> -->
   <br />
-  <br />
   <div style="margin: 15px">
-    <div class="p-input-icon-left">
-      <i class="pi pi-search"></i>
-    </div>
-    <InputText
-      autofocus
-      v-model.lazy="searchFilters['global']"
-      placeholder="Search"
-      size="25"
-      style="z-index: 1"
-    />&nbsp;
-    <Button
-      type="button"
-      icon="pi pi-plus"
-      class="p-button-success"
-      @click="addColumn"
-      v-tooltip="'Add new proposal'"
-      style="height: 36px; width: 36px; margin: 1px 5px"
-    ></Button>
-    <span style="margin: 10px 40px; position: absolute; font-size: 12px"
-      >Source: {{ jsonUrl }}</span
-    >
-    <div style="position: absolute; right: 0; top: -3px">
-      <ToggleButton
-        v-model="st.treeCheckboxes"
+    <span style="margin: 10px 40px; position: absolute; font-size: 12px">
+      Source: {{ jsonUrl }}
+    </span>
+    <div style="position: absolute; right: 0; top: -3px"></div>
+  </div>
+  <Toolbar>
+    <template #start>
+      <div class="col-4 md:col-6 sm:col-4 xs:col-2" style="float: right">
+        <div class="p-inputgroup">
+          <div class="p-input-icon-left">
+            <i class="pi pi-search"></i>
+          </div>
+          <InputText
+            autofocus
+            v-model.lazy="searchFilters['global']"
+            placeholder="Search"
+            size="25"
+            style="z-index: 1"
+          />
+          <Button
+            type="button"
+            icon="pi pi-plus"
+            class="p-button-success"
+            @click="addColumn"
+            v-tooltip="'Add new proposal'"
+          ></Button>
+        </div>
+      </div>
+
+      <!-- <Button label="New" icon="pi pi-plus" class="mr-2" />
+      <Button label="Upload" icon="pi pi-upload" class="p-button-success" />
+      <i class="pi pi-bars p-toolbar-separator mr-2" /> -->
+      <Button
+        :label="st.hasChange ? 'Save' : st.isEditMode ? 'Lock' : 'Edit'"
+        :icon="
+          'pi pi-' +
+          (st.hasChange ? 'check' : st.isEditMode ? 'lock' : 'pencil')
+        "
+        @click="editButtonClicked"
+        class="p-button-success"
+      ></Button>
+    </template>
+
+    <template #end>
+      <!-- <Button icon="pi pi-search" class="mr-2" />
+      <Button icon="pi pi-calendar" class="p-button-success mr-2" />
+      <Button icon="pi pi-times" class="p-button-danger" /> -->
+      <!-- <ToggleButton
+        v-model="st.isEditMode"
         onIcon="pi pi-times"
         offIcon="pi pi-check"
         style="height: 43px"
-      />
+      /> -->
       <MultiSelect
         :modelValue="visibleColumns"
         @update:modelValue="onToggle"
@@ -260,31 +416,12 @@ const items = ref([
         placeholder="Select Columns"
         style="width: 20em; text-align: left; height: 43px"
       />
-    </div>
-  </div>
-  <Toolbar>
-    <template #start>
-      <Button label="New" icon="pi pi-plus" class="mr-2" />
-      <Button label="Upload" icon="pi pi-upload" class="p-button-success" />
-      <i class="pi pi-bars p-toolbar-separator mr-2" />
-      <SplitButton
-        label="Save"
-        icon="pi pi-check"
-        :model="items"
-        class="p-button-warning"
-      ></SplitButton>
-    </template>
-
-    <template #end>
-      <Button icon="pi pi-search" class="mr-2" />
-      <Button icon="pi pi-calendar" class="p-button-success mr-2" />
-      <Button icon="pi pi-times" class="p-button-danger" />
     </template>
   </Toolbar>
   <TreeTable
     @mousemove="treeTableMouseOver"
     :value="rootNode"
-    :selectionMode="st.treeCheckboxes ? 'checkbox' : 'multiple'"
+    :selectionMode="st.isEditMode ? 'checkbox' : 'multiple'"
     v-model:selectionKeys="selectedKeys"
     :expandedKeys="expandedKeys"
     @nodeSelect="onNodeSelect"
@@ -330,7 +467,7 @@ const items = ref([
     </template>
 
     <Column
-      v-for="col of visibleColumns"
+      v-for="(col, index) of visibleColumns"
       :key="col.columnKey"
       :frozen="col.frozen"
       :field="col.field"
@@ -350,8 +487,9 @@ const items = ref([
       </template>
 
       <template #header="slotProps" v-else-if="col.class == 'name-column'">
-        <Button
+        <SplitButton
           @click="addNode"
+          :model="mainSplitButtonItems"
           type="button"
           icon="pi pi-plus"
           class="p-button-warning"
@@ -364,7 +502,7 @@ const items = ref([
             left: 8px;
             position: absolute;
           "
-        ></Button>
+        ></SplitButton>
       </template>
 
       <!-- <template #body="slotProps" v-if="col.dataType == 'button'">
@@ -372,31 +510,53 @@ const items = ref([
       </template>-->
 
       <template #body="slotProps" v-if="col.dataType == 'html'">
-        <div v-if="!st.treeCheckboxes" style="width: 100%">
-          <div>
-            <Editor
-              v-model.lazy="slotProps.node.data[col.field + '']"
-              editorStyle="font-size: 14px;"
-              :autoResize="true"
-              @text-change="onEditorChanged"
-              v-tooltip="slotProps.node.data.content"
-            />
-            <span
-              style="
-                font-size: 11px;
-                position: absolute;
-                right: 0;
-                top: calc(50% - 6px);
-              "
-              >({{ slotProps.node.children?.length }})</span
-            >
+        <div
+          style="width: 100%; margin: -58px -8px -60px 0; min-height: 45px"
+          class="show-on-hover-parent"
+        >
+          <div v-if="st.isEditMode">
+            <div>
+              <Editor
+                v-model.lazy="slotProps.node.data[col.field + '']"
+                editorStyle="font-size: 14px;"
+                :autoResize="true"
+                @text-change="onEditorChanged"
+                v-tooltip="slotProps.node.data.content"
+              />
+            </div>
           </div>
+          <span v-else v-html="slotProps.node.data[col.field + '']"> </span>
+          <div class="node-count">
+            <span
+              class="show-on-hover-child"
+              style="right: 0px; padding: 5px; cursor: pointer"
+            >
+              <!-- @click="addNode" -->
+
+              <SpeedDial
+                :model="goalOperationsMenu"
+                :radius="20"
+                direction="left"
+                type="semi-circle"
+                style="width: 20px; height: 20px"
+              />
+              <!-- deleteNode(slotProps.node) -->
+            </span>
+            <span
+              style="padding: 5px"
+              v-if="slotProps.node.children"
+              @click="toggleNode(slotProps.node, undefined, true)"
+            >
+              ({{ slotProps.node.children?.length }})
+            </span>
+          </div>
+
+          <!-- <span
+            v-else
+            v-html="json(slotProps, -1)"
+            style="display: inline-block"
+          ></span> -->
         </div>
-        <span
-          v-else
-          v-html="json(slotProps, -1)"
-          style="display: inline-block"
-        ></span>
       </template>
 
       <template #body="slotProps" v-else-if="col.dataType == 'star'">
@@ -409,9 +569,10 @@ const items = ref([
         />
       </template>
 
-      <template #body="slotProps" v-else-if="col.dataType == 'knob'">
+      <template #body="slotProps" v-else-if="col.dataType == 'vote'">
         <Knob
           class="knob"
+          :title="slotProps.node.data[col.field]"
           v-model="slotProps.node.data[col.field]"
           :step="1"
           :size="50"
@@ -421,27 +582,53 @@ const items = ref([
         />
       </template>
 
-      <!-- <template #body="slotProps" v-else-if="col.dataType == 'slider'">
-        <Slider v-model="slotProps.node.data[col.field]" :step="1" :min="-5" :max="5" />
-      </template>-->
+      <template #body="slopProps" v-else-if="col.dataType == 'vote1'">
+        <vote
+          class="center"
+          :user-vote="slotProps?.node.data[col.field]"
+          :global-vote="60"
+          @change="voteChange($event)"
+        />
+        <!--  :title="slotProps.node.data[col.field]" -->
+      </template>
+
+      <template #body="slotProps" v-else-if="col.dataType == 'slider'">
+        <Slider
+          v-model="slotProps.node.data[col.field]"
+          :step="1"
+          :min="-5"
+          :max="5"
+        />
+      </template>
     </Column>
   </TreeTable>
   <!-- <InputText type="text" v-model="st.ratingType" ></InputText> -->
 
   <br />
-  <Textarea
-    v-if="st.treeCheckboxes"
-    v-model="jsonData"
-    style="height: 150px; width: 100%; margin-top: 200px; overflow: scroll"
-  ></Textarea>
+  <div v-if="st.isEditMode">
+    <Textarea
+      v-model="jsonData"
+      style="height: 150px; width: 100%; margin-top: 200px; overflow: scroll"
+    ></Textarea>
+    <div style="position: relative; height: 200px; margin-top: 200px">
+      <ConsoleView channelNames="test"></ConsoleView>
+    </div>
+  </div>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
 .knob,
 .slider {
   width: 100%;
   text-align: center;
   margin: -5px 0px -15px 0;
+}
+
+.show-on-hover-parent .show-on-hover-child {
+  display: none;
+}
+.show-on-hover-parent:hover .show-on-hover-child {
+  display: inline;
 }
 </style>
 
@@ -454,6 +641,15 @@ const items = ref([
 }*/
 .ql-toolbar.ql-snow + .ql-container.ql-snow {
   border: none;
+}
+
+.p-treetable .node-count {
+  font-size: 11px;
+  position: absolute;
+  /*left: -45px;
+  top: calc(0% - 10px);*/
+  right: 0;
+  top: calc(50% - 6px);
 }
 .p-treetable .p-treetable-header {
   padding: 0 !important;
@@ -488,22 +684,27 @@ const items = ref([
   --text-color-secondary: #111;
 }
 .p-treetable.p-treetable-sm .p-treetable-thead > tr > th {
-  background: #2a323df5 !important;
+  /*background: #2a323df5 !important;*/
   text-align: center;
   display: inline-block;
 }
 
-.p-treetable .p-treetable-thead > tr > th {
+/*.p-treetable .p-treetable-thead > tr > th {
   box-shadow: 10px 5px 0px rgba(0, 0, 0, 0.1);
 }
 
 .p-treetable .p-treetable-thead > tr > th:hover {
   background: #323c49 !important;
-}
+}*/
+
 .p-treetable .p-treetable-thead button.p-button:first-child {
   margin-right: 18px;
 }
-
+.center {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
 /*.button-column > span {
   display: none;
 }*/

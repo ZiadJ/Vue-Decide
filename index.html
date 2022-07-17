@@ -2,12 +2,35 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" href="src/assets/mesh-removebg-preview.png" />
+    <link rel="icon" href="src/assets/mesh-bg.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Group Decision App</title>
+    <title>Universal Resource Management</title>
   </head>
-  <body>
-    <div id="app"></div>
+  <body style="height: 100vh;">
+    <div class="p-panel tight-fit" style="height: 100%">
+      <div
+        id="app"
+        class="p-panel-content tight-fit"
+        style="height: 100%;"
+      ></div>
+    </div>
     <script type="module" src="/src/main.ts"></script>
+    <script type="text/javascript">
+      document.body.className = 'show'
+    </script>
+    <style>
+      body {
+        opacity: 0;
+      }
+      body, span, td {
+        transition: 300ms all ease;
+      }
+      .show {
+        opacity: 1 !important;
+      }
+      html, body, #app {
+        height: 100%;
+      }
+    </style>
   </body>
 </html>

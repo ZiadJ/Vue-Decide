@@ -1,7 +1,8 @@
+import './index.css'
 import { createApp } from 'vue'
 import App from './App.vue'
 const app = createApp(App)
-
+app.config.globalProperties.test2 = 'abc'
 import router from './router'
 app.use(router)
 import PrimeVue from 'primevue/config'
@@ -15,11 +16,12 @@ app.use(PromiseDialog)
 
 import 'primeicons/primeicons.css'
 import 'primevue/resources/primevue.min.css'
-import 'primevue/resources/themes/bootstrap4-dark-blue/theme.css'
-//import '@/assets/vivadark.css'
+import 'primeflex/primeflex.css'
+// Now set with ThemeSwicher
+//import 'primevue/resources/themes/bootstrap4-dark-blue/theme.css'
 //import 'primevue/resources/themes/bootstrap4-light-blue/theme.css'
 //import 'primevue/resources/themes/lara-dark-indigo/theme.css'
-import 'primeflex/primeflex.css'
+//import '@/assets/vivadark.css'
 
 // export function json(
 //   obj: object | Interface | any,
@@ -105,6 +107,7 @@ import DataView from 'primevue/dataview'
 import DataViewLayoutOptions from 'primevue/dataviewlayoutoptions'
 import DeferredContent from 'primevue/deferredcontent'
 import Dialog from 'primevue/dialog'
+import DialogService from 'primevue/dialogservice'
 import Divider from 'primevue/divider'
 import Dock from 'primevue/dock'
 import Dropdown from 'primevue/dropdown'
@@ -173,6 +176,7 @@ import VirtualScroller from 'primevue/virtualscroller'
 app.use(PrimeVue, { ripple: true })
 app.use(ConfirmationService)
 app.use(ToastService)
+app.use(DialogService)
 app.use(router)
 
 app.directive('tooltip', Tooltip)

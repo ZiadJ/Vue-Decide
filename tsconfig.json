@@ -11,6 +11,5 @@
       "path": "./tsconfig.vitest.json"
     }
   ],
-  "exclude": ["auto-import.d.ts"],
-  "noUnusedLocals": true
+  /*"exclude": ["auto-import.d.ts"],*/
 }
